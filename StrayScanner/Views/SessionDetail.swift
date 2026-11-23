@@ -51,7 +51,6 @@ struct SessionDetailView: View {
     @State private var player: AVPlayer?
     @State private var shareError: String?
 
-    let defaultUrl = URL(fileURLWithPath: "")
 
     var body: some View {
         let width = UIScreen.main.bounds.size.width
@@ -60,15 +59,23 @@ struct SessionDetailView: View {
         Color("BackgroundColor")
             .edgesIgnoringSafeArea(.all)
         VStack {
-            VideoPlayer(player: player ?? AVPlayer(url: defaultUrl))
-                .frame(width: width, height: height)
-                .padding(.horizontal, 0.0)
-                .onAppear {
-                    if player == nil {
-                        player = AVPlayer(url: recording.absoluteRgbPath() ?? defaultUrl)
-                    }
+            Group {
+                if let player = player {
+                    VideoPlayer(player: player)
+                } else {
+                    Text("RGB video unavailable")
                 }
-            
+            }
+            .frame(width: width, height: height)
+            .onAppear {
+                guard player == nil, let url = recording.absoluteRgbPath()?.absoluteURL,
+                      FileManager.default.fileExists(atPath: url.path) else { return }
+                let rgbPlayer = AVPlayer(url: url)
+                player = rgbPlayer
+                rgbPlayer.play()
+            }
+            .onDisappear { player?.pause(); player = nil }
+
             HStack(spacing: 20) {
                 Button(action: shareItem) {
                     HStack {

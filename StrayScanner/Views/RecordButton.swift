@@ -12,9 +12,10 @@ import UIKit
 @IBDesignable
 class RecordButton : UIView {
     private let circleStroke: CGFloat = 5.0
-    private let animationDuration = 0.1
     private var recording: Bool = false
     private var disk: CALayer!
+    private var edge: CAShapeLayer?
+    private lazy var tap = UITapGestureRecognizer(target: self, action: #selector(buttonPressed))
     private var callback: Optional<(Bool) -> Void> = Optional.none
 
     override public init(frame: CGRect) {
@@ -23,6 +24,7 @@ class RecordButton : UIView {
     }
 
     override func layoutSubviews() {
+        super.layoutSubviews()
         setup()
     }
 
@@ -36,19 +38,22 @@ class RecordButton : UIView {
     }
 
     @objc func buttonPressed() {
-        self.animateButton()
+        disk?.removeAllAnimations()
         self.recording = !self.recording
+        updateDiskShape()
         self.callback?(self.recording)
     }
 
     private func setup() {
         drawInner()
         drawEdge()
-        self.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(buttonPressed)))
+        if tap.view == nil { addGestureRecognizer(tap) }
     }
 
     private func drawEdge() {
+        edge?.removeFromSuperlayer()
         let circleLayer = CAShapeLayer()
+        edge = circleLayer
         let circleRadius: CGFloat = self.bounds.height * 0.5 - circleStroke;
         let x: CGFloat = self.bounds.size.width / 2
         let y: CGFloat = self.bounds.size.height / 2
@@ -63,9 +68,9 @@ class RecordButton : UIView {
     }
 
     private func drawInner() {
+        disk?.removeFromSuperlayer()
         disk = CALayer()
         let diameter = self.bounds.height - circleStroke * 4.0
-        let radius = diameter * 0.5
         let x: CGFloat = self.bounds.width * 0.5
         let y: CGFloat = self.bounds.height * 0.5
         let rect = CGRect(x: 0, y: 0, width: diameter, height: diameter)
@@ -73,62 +78,15 @@ class RecordButton : UIView {
         disk.position.x = x
         disk.position.y = y
         disk.bounds = rect
-        disk.cornerRadius = radius
         disk.opacity = 1.0
-        disk.transform = CATransform3DIdentity
+        updateDiskShape()
         self.layer.addSublayer(disk)
     }
 
-    private func animateButton() {
-        // Called before the flag is flipped.
-        if self.recording {
-            // Finished recording.
-            self.animateToIdle()
-        } else {
-            self.animateToRecording()
-        }
-    }
-
-    private func animateToRecording() {
-        let squaringAnimation = CABasicAnimation(keyPath: "cornerRadius")
-        squaringAnimation.fromValue = cornerRadius(recording: false)
-        squaringAnimation.toValue = cornerRadius(recording: true)
-        squaringAnimation.isRemovedOnCompletion = false
-        squaringAnimation.fillMode = CAMediaTimingFillMode.forwards
-
-        let scaleAnimation = CABasicAnimation(keyPath: "transform.scale")
-        scaleAnimation.fromValue = 1.0
-        scaleAnimation.toValue = 0.5
-        scaleAnimation.isRemovedOnCompletion = false
-        scaleAnimation.fillMode = CAMediaTimingFillMode.forwards
-
-        let animationGroup = CAAnimationGroup()
-        animationGroup.animations = [squaringAnimation, scaleAnimation]
-        animationGroup.isRemovedOnCompletion = false
-        animationGroup.fillMode = CAMediaTimingFillMode.forwards
-        animationGroup.duration = animationDuration
-        disk.add(animationGroup, forKey: "cornerRadius")
-    }
-
-    private func animateToIdle() {
-        let roundingAnimation = CABasicAnimation(keyPath: "cornerRadius")
-        roundingAnimation.fromValue = cornerRadius(recording: true)
-        roundingAnimation.toValue = cornerRadius(recording: false)
-        roundingAnimation.fillMode = CAMediaTimingFillMode.forwards
-        roundingAnimation.isRemovedOnCompletion = false
-
-        let scaleAnimation = CABasicAnimation(keyPath: "transform.scale")
-        scaleAnimation.fromValue = 0.5
-        scaleAnimation.toValue = 1.0
-        scaleAnimation.isRemovedOnCompletion = false
-        scaleAnimation.fillMode = CAMediaTimingFillMode.forwards
-
-        let animationGroup = CAAnimationGroup()
-        animationGroup.animations = [roundingAnimation, scaleAnimation]
-        animationGroup.isRemovedOnCompletion = false
-        animationGroup.fillMode = CAMediaTimingFillMode.forwards
-        animationGroup.duration = animationDuration
-        disk.add(animationGroup, forKey: "cornerRadius")
+    private func updateDiskShape() {
+        disk?.cornerRadius = cornerRadius(recording: recording)
+        let scale: CGFloat = recording ? 0.5 : 1
+        disk?.transform = CATransform3DMakeScale(scale, scale, 1)
     }
 
     @objc override func prepareForInterfaceBuilder() {
