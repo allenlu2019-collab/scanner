@@ -43,7 +43,8 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
     private static let previewDepthKey = "PreviewDepth"
     private var finalizingRecording = false
     private var lastRemotePress: TimeInterval?
-    private var chosenFpsSetting: Int = 0
+    private static let defaultFpsSetting = 1 // 30 fps
+    private var chosenFpsSetting = defaultFpsSetting
     @IBOutlet private var rgbView: MetalView!
     @IBOutlet private var depthView: MetalView!
     @IBOutlet private var recordButton: RecordButton!
@@ -55,7 +56,9 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         self.dismissFunction = fn
     }
     override func viewWillAppear(_ animated: Bool) {
-        self.chosenFpsSetting = UserDefaults.standard.integer(forKey: FpsUserDefaultsKey)
+        let savedSetting = UserDefaults.standard.object(forKey: FpsUserDefaultsKey) as? Int
+        chosenFpsSetting = savedSetting.flatMap { FpsDividers.indices.contains($0) ? $0 : nil }
+            ?? Self.defaultFpsSetting
         updateFpsSetting()
     }
 

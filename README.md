@@ -9,6 +9,8 @@ The goal of this app, is to allow easy access to raw RGB-D video datasets record
 
 Documentation can be found under the [docs](docs/) directory. The document [docs/format.md](docs/format.md) describes the data format and conventions used in the app.
 
+New installations default to 30 fps. Tap the FPS button to change the rate. On the recording screen, tap the live image to switch between RGB and depth. On iOS 17.2 or later, the iPhone volume buttons and compatible Bluetooth shutter remotes can start and stop recording. Remotes that send Enter or Space can also toggle recording, including on older supported iOS versions. Saved scans open in the RGB video player and play automatically.
+
 ## Related projects
 
 - [StrayVisualizer](https://github.com/kekeblom/StrayVisualizer): a project to visualize the raw data collected by the app
