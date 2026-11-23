@@ -27,7 +27,7 @@ class DatasetEncoder {
     private var lastFrame: ARFrame?
     private var dispatchGroup = DispatchGroup()
     private var currentFrame: Int = -1
-    private var savedFrames: Int = 0
+    private(set) var savedFrameCount = 0
     private var queueDroppedFrames = 0
     private let frameInterval: Int // Only save every frameInterval-th frame.
     private let encodingSemaphore = DispatchSemaphore(value: 3) // Limit queued frames to avoid ARFrame retention
@@ -86,8 +86,8 @@ class DatasetEncoder {
             }
             guard self.rgbEncoder.add(frame: VideoEncoderInput(buffer: frame.capturedImage, time: frame.timestamp),
                                       currentFrame: totalFrames) else { return }
-            let frameNumber = self.savedFrames
-            self.savedFrames += 1
+            let frameNumber = self.savedFrameCount
+            self.savedFrameCount += 1
             if let sceneDepth = frame.sceneDepth {
                 self.depthEncoder.encodeFrame(frame: sceneDepth.depthMap, frameNumber: frameNumber)
                 if let confidence = sceneDepth.confidenceMap {
@@ -164,6 +164,14 @@ class DatasetEncoder {
             case .encodingError:
                 status = .videoEncodingError
                 print("Something went wrong encoding confidence values.")
+        }
+    }
+
+    func removeRecordingFiles() {
+        do {
+            try FileManager.default.removeItem(at: datasetDirectory)
+        } catch {
+            print("Could not remove incomplete recording: \(error.localizedDescription)")
         }
     }
 

@@ -19,3 +19,5 @@ No writer drop count was captured. A match between RGB and depth file counts che
 The ninth folder contained a zero-byte `rgb.mp4`, a header-only `odometry.csv` (zero data rows), zero depth PNGs, and two valid IMU data rows. This is consistent with an attempt that never saved an RGB frame. The files do not establish why it stopped. Whether it appeared in the recording list, showed an error alert, or followed a screen lock is still unknown. The folder was kept for investigation.
 
 Subsequent builds log separate counts for frames skipped because the encoding queue was full and frames rejected by the RGB writer. These counters exclude intentional frame-rate subsampling.
+
+The two IMU samples in the empty scan were 10.058 ms apart. This measures the spacing between samples rather than total recording duration. A quick start and stop is plausible. The exact trigger and build provenance for that folder remain unconfirmed. Scanner now removes zero-frame captures after finalization and returns to the list. It also removes failed captures with saved frames before showing the encoding error.

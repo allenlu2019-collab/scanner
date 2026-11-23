@@ -207,10 +207,18 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         recordButton.isUserInteractionEnabled = false
         DispatchQueue.global(qos: .userInitiated).async {
             encoder.wrapUp()
+            let hasFrames = encoder.savedFrameCount > 0
+            if !hasFrames || encoder.status != .allGood {
+                encoder.removeRecordingFiles()
+            }
             DispatchQueue.main.async {
                 self.finalizingRecording = false
                 self.recordButton.isUserInteractionEnabled = true
                 self.datasetEncoder = nil
+                guard hasFrames else {
+                    self.dismissFunction?()
+                    return
+                }
                 switch encoder.status {
                 case .allGood:
                     self.saveRecording(started, encoder)
