@@ -10,6 +10,7 @@ import Foundation
 import UIKit
 import Metal
 import ARKit
+import AVKit
 import CoreData
 import CoreMotion
 
@@ -39,6 +40,8 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
     private var dataContext: NSManagedObjectContext!
     private var datasetEncoder: DatasetEncoder?
     private let imuOperationQueue = OperationQueue()
+    private var finalizingRecording = false
+    private var lastRemotePress: TimeInterval?
     private var chosenFpsSetting: Int = 0
     @IBOutlet private var rgbView: MetalView!
     @IBOutlet private var depthView: MetalView!
@@ -64,14 +67,23 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         rgbView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(viewTapped)))
         
         setViewProperties()
+        setPreviewMode(UserDefaults.standard.bool(forKey: "PreviewDepth") ? .depth : .rgb)
         session.delegate = self
 
-        recordButton.setCallback { (recording: Bool) in
-            self.toggleRecording(recording)
+        recordButton.setCallback { [weak self] recording in
+            self?.toggleRecording(recording)
+        }
+        if #available(iOS 17.2, *) {
+            view.addInteraction(AVCaptureEventInteraction { [weak self] event in
+                if event.phase == .ended {
+                    self?.remoteTriggerPressed()
+                }
+            })
         }
         fpsButton.layer.masksToBounds = true
         fpsButton.layer.cornerRadius = 12.0
         
+        imuOperationQueue.maxConcurrentOperationCount = 1
         imuOperationQueue.qualityOfService = .userInitiated
     }
 
@@ -80,12 +92,17 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
     }
 
     override func viewWillDisappear(_ animated: Bool) {
+        resignFirstResponder()
+        stopRawIMU()
+        imuOperationQueue.waitUntilAllOperationsAreFinished()
         updateLabelTimer?.invalidate()
+        startedRecording = nil
         datasetEncoder = nil
     }
 
     override func viewDidAppear(_ animated: Bool) {
         startSession()
+        becomeFirstResponder()
     }
 
     private func startSession() {
@@ -177,20 +194,28 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         updateLabelTimer = nil
         // Stop IMU updates
         stopRawIMU()
-        datasetEncoder?.wrapUp()
-        if let encoder = datasetEncoder {
-            switch encoder.status {
-                case .allGood:
-                    saveRecording(started, encoder)
-                case .videoEncodingError:
-                    showError()
-                case .directoryCreationError:
-                    showError()
-            }
-        } else {
-            print("No dataset encoder. Something is wrong.")
+        imuOperationQueue.waitUntilAllOperationsAreFinished()
+        guard let encoder = datasetEncoder else {
+            showError()
+            return
         }
-        self.dismissFunction?()
+        finalizingRecording = true
+        recordButton.isUserInteractionEnabled = false
+        DispatchQueue.global(qos: .userInitiated).async {
+            encoder.wrapUp()
+            DispatchQueue.main.async {
+                self.finalizingRecording = false
+                self.recordButton.isUserInteractionEnabled = true
+                self.datasetEncoder = nil
+                switch encoder.status {
+                case .allGood:
+                    self.saveRecording(started, encoder)
+                    self.dismissFunction?()
+                case .videoEncodingError, .directoryCreationError:
+                    self.showError()
+                }
+            }
+        }
     }
 
     private func saveRecording(_ started: Date, _ encoder: DatasetEncoder) {
@@ -199,12 +224,12 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         let duration = Date().timeIntervalSince(started)
         let entity = NSEntityDescription.entity(forEntityName: "Recording", in: self.dataContext)!
         let recording: Recording = Recording(entity: entity, insertInto: self.dataContext)
-        recording.setValue(datasetEncoder!.id, forKey: "id")
+        recording.setValue(encoder.id, forKey: "id")
         recording.setValue(duration, forKey: "duration")
         recording.setValue(started, forKey: "createdAt")
         recording.setValue("Recording \(sessionCount)", forKey: "name")
-        recording.setValue(datasetEncoder!.rgbFilePath.relativeString, forKey: "rgbFilePath")
-        recording.setValue(datasetEncoder!.depthFilePath.relativeString, forKey: "depthFilePath")
+        recording.setValue(encoder.rgbFilePath.relativeString, forKey: "rgbFilePath")
+        recording.setValue(encoder.depthFilePath.relativeString, forKey: "depthFilePath")
         do {
             try self.dataContext.save()
         } catch let error as NSError {
@@ -231,19 +256,43 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         self.timeLabel.text = String(format: "%02d:%02d:%02d", hours, minutes, roundSeconds)
     }
 
-    @objc func viewTapped() {
-        switch renderer!.renderMode {
-            case .depth:
-                renderer!.renderMode = RenderMode.rgb
-                rgbView.isHidden = false
-                depthView.isHidden = true
-            case .rgb:
-                renderer!.renderMode = RenderMode.depth
-                depthView.isHidden = false
-                rgbView.isHidden = true
-        }
+    private func setPreviewMode(_ mode: RenderMode) {
+        renderer?.renderMode = mode
+        rgbView.isHidden = mode == .depth
+        depthView.isHidden = mode == .rgb
     }
-    
+
+    @objc func viewTapped() {
+        let nextMode: RenderMode = renderer?.renderMode == .rgb ? .depth : .rgb
+        setPreviewMode(nextMode)
+        UserDefaults.standard.set(nextMode == .depth, forKey: "PreviewDepth")
+    }
+
+    override var canBecomeFirstResponder: Bool { true }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let otherPresses = Set(presses.filter {
+            switch $0.key?.keyCode {
+            case .keyboardReturnOrEnter, .keypadEnter, .keyboardSpacebar:
+                return false
+            default:
+                return true
+            }
+        })
+        if otherPresses.count != presses.count { remoteTriggerPressed() }
+        if !otherPresses.isEmpty { super.pressesEnded(otherPresses, with: event) }
+    }
+
+    private func remoteTriggerPressed() {
+        guard isFirstResponder, view.window != nil,
+              UIApplication.shared.applicationState == .active,
+              !unsupported, !finalizingRecording, session.currentFrame != nil else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let lastPress = lastRemotePress, now - lastPress < 0.8 { return }
+        lastRemotePress = now
+        recordButton.buttonPressed()
+    }
+
     @IBAction func fpsButtonTapped() {
         chosenFpsSetting = (chosenFpsSetting + 1) % AvailableFpsSettings.count
         updateFpsSetting()

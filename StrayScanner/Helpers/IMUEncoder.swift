@@ -15,7 +15,6 @@ class IMUEncoder {
 
     init(url: URL) {
         self.path = url
-        FileManager.default.createFile(atPath: self.path.absoluteString,  contents:Data("".utf8), attributes: nil)
         do {
             try "".write(to: self.path, atomically: true, encoding: .utf8)
             self.fileHandle = try FileHandle(forWritingTo: self.path)

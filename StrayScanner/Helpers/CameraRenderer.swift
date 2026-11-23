@@ -35,7 +35,7 @@ class CameraRenderer {
     private var depthTexture: MTLTexture!
     private lazy var textureCache: CVMetalTextureCache = makeTextureCache()
     
-    public var renderMode: RenderMode = RenderMode.depth 
+    public var renderMode: RenderMode = .rgb
 
     init(rgbLayer: CAMetalLayer, depthLayer: CAMetalLayer) {
         self.rgbLayer = rgbLayer

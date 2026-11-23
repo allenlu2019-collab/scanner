@@ -44,8 +44,11 @@ class ConfidenceEncoder {
             do {
                 try self.ciContext.writePNGRepresentation(of: image, to: framePath, format: CIFormat.L8, colorSpace: colorSpace)
             } catch let error {
+                status = .encodingError
                 print("Could not save confidence value. \(error.localizedDescription)")
             }
+        } else {
+            status = .encodingError
         }
     }
 }

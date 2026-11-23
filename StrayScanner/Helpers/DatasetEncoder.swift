@@ -67,8 +67,8 @@ class DatasetEncoder {
     }
 
     func add(frame: ARFrame) {
-        let totalFrames: Int = currentFrame
-        currentFrame = currentFrame + 1
+        currentFrame += 1
+        let totalFrames = currentFrame
         if (currentFrame % frameInterval != 0) {
             return
         }
@@ -143,20 +143,20 @@ class DatasetEncoder {
         writeIntrinsics()
         switch self.rgbEncoder.status {
             case .allGood:
-                status = .allGood
+                break
             case .error:
                 status = .videoEncodingError
         }
         switch self.depthEncoder.status {
             case .allGood:
-                status = .allGood
+                break
             case .frameEncodingError:
                 status = .videoEncodingError
                 print("Something went wrong encoding depth.")
         }
         switch self.confidenceEncoder.status {
             case .allGood:
-                status = .allGood
+                break
             case .encodingError:
                 status = .videoEncodingError
                 print("Something went wrong encoding confidence values.")
@@ -183,11 +183,11 @@ class DatasetEncoder {
     static private func createDirectory(id: inout UUID) -> URL {
         let directoryId = hashUUID(id: id)
         let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        var directory = URL(fileURLWithPath: directoryId, relativeTo: url)
-        if FileManager.default.fileExists(atPath: directory.absoluteString) {
+        let directory = URL(fileURLWithPath: directoryId, relativeTo: url)
+        if FileManager.default.fileExists(atPath: directory.path) {
             // Just in case the first 5 characters clash, try again.
             id = UUID()
-            directory = DatasetEncoder.createDirectory(id: &id)
+            return DatasetEncoder.createDirectory(id: &id)
         }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
