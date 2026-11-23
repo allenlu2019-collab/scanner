@@ -40,13 +40,16 @@ class VideoEncoder {
         initializeFile()
     }
 
+    private var droppedFrames = 0
+
     func finishEncoding() {
+        if droppedFrames > 0 { print("Dropped \(droppedFrames) RGB frames.") }
         self.doneRecording()
     }
 
-    func add(frame: VideoEncoderInput, currentFrame: Int) {
+    func add(frame: VideoEncoderInput, currentFrame: Int) -> Bool {
         guard status == .allGood, let writer = videoWriter,
-              let input = videoWriterInput, let adapter = videoAdapter else { return }
+              let input = videoWriterInput, let adapter = videoAdapter else { return false }
         let deadline = ProcessInfo.processInfo.systemUptime + 1
         while writer.status == .writing && !input.isReadyForMoreMediaData &&
               ProcessInfo.processInfo.systemUptime < deadline {
@@ -55,10 +58,12 @@ class VideoEncoder {
         let time = CMTime(value: Int64(currentFrame), timescale: timeScale)
         guard writer.status == .writing, input.isReadyForMoreMediaData,
               adapter.append(frame.buffer, withPresentationTime: time) else {
-            status = .error
+            if writer.status != .writing { status = .error }
+            droppedFrames += 1
             print("Could not append video frame: \(writer.error?.localizedDescription ?? "writer unavailable")")
-            return
+            return false
         }
+        return true
     }
 
     private func initializeFile() {

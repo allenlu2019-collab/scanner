@@ -76,14 +76,16 @@ class DatasetEncoder {
         guard encodingSemaphore.wait(timeout: .now()) == .success else {
             return
         }
-        let frameNumber: Int = savedFrames
-        savedFrames = savedFrames + 1
         dispatchGroup.enter()
         queue.async {
             defer {
                 self.encodingSemaphore.signal()
                 self.dispatchGroup.leave()
             }
+            guard self.rgbEncoder.add(frame: VideoEncoderInput(buffer: frame.capturedImage, time: frame.timestamp),
+                                      currentFrame: totalFrames) else { return }
+            let frameNumber = self.savedFrames
+            self.savedFrames += 1
             if let sceneDepth = frame.sceneDepth {
                 self.depthEncoder.encodeFrame(frame: sceneDepth.depthMap, frameNumber: frameNumber)
                 if let confidence = sceneDepth.confidenceMap {
@@ -94,7 +96,6 @@ class DatasetEncoder {
             } else {
                 print("warning: scene depth missing.")
             }
-            self.rgbEncoder.add(frame: VideoEncoderInput(buffer: frame.capturedImage, time: frame.timestamp), currentFrame: totalFrames)
             self.odometryEncoder.add(frame: frame, currentFrame: frameNumber)
             self.distortionEncoder.add(frame: frame, currentFrame: frameNumber)
             self.lastFrame = frame
