@@ -40,6 +40,7 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
     private var dataContext: NSManagedObjectContext!
     private var datasetEncoder: DatasetEncoder?
     private let imuOperationQueue = OperationQueue()
+    private static let previewDepthKey = "PreviewDepth"
     private var finalizingRecording = false
     private var lastRemotePress: TimeInterval?
     private var chosenFpsSetting: Int = 0
@@ -67,7 +68,7 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         rgbView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(viewTapped)))
         
         setViewProperties()
-        setPreviewMode(UserDefaults.standard.bool(forKey: "PreviewDepth") ? .depth : .rgb)
+        setPreviewMode(UserDefaults.standard.bool(forKey: Self.previewDepthKey) ? .depth : .rgb)
         session.delegate = self
 
         recordButton.setCallback { [weak self] recording in
@@ -265,13 +266,14 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
     @objc func viewTapped() {
         let nextMode: RenderMode = renderer?.renderMode == .rgb ? .depth : .rgb
         setPreviewMode(nextMode)
-        UserDefaults.standard.set(nextMode == .depth, forKey: "PreviewDepth")
+        UserDefaults.standard.set(nextMode == .depth, forKey: Self.previewDepthKey)
     }
 
     override var canBecomeFirstResponder: Bool { true }
 
-    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        let otherPresses = Set(presses.filter {
+    private func unhandledPresses(_ presses: Set<UIPress>) -> Set<UIPress> {
+        guard isFirstResponder else { return presses }
+        return Set(presses.filter {
             switch $0.key?.keyCode {
             case .keyboardReturnOrEnter, .keypadEnter, .keyboardSpacebar:
                 return false
@@ -279,12 +281,26 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
                 return true
             }
         })
-        if otherPresses.count != presses.count { remoteTriggerPressed() }
-        if !otherPresses.isEmpty { super.pressesEnded(otherPresses, with: event) }
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let remaining = unhandledPresses(presses)
+        if !remaining.isEmpty { super.pressesBegan(remaining, with: event) }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let remaining = unhandledPresses(presses)
+        if remaining.count != presses.count { remoteTriggerPressed() }
+        if !remaining.isEmpty { super.pressesEnded(remaining, with: event) }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let remaining = unhandledPresses(presses)
+        if !remaining.isEmpty { super.pressesCancelled(remaining, with: event) }
     }
 
     private func remoteTriggerPressed() {
-        guard isFirstResponder, view.window != nil,
+        guard view.window != nil,
               UIApplication.shared.applicationState == .active,
               !unsupported, !finalizingRecording, session.currentFrame != nil else { return }
         let now = ProcessInfo.processInfo.systemUptime
