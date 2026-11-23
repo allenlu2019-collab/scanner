@@ -28,6 +28,7 @@ class DatasetEncoder {
     private var dispatchGroup = DispatchGroup()
     private var currentFrame: Int = -1
     private var savedFrames: Int = 0
+    private var queueDroppedFrames = 0
     private let frameInterval: Int // Only save every frameInterval-th frame.
     private let encodingSemaphore = DispatchSemaphore(value: 3) // Limit queued frames to avoid ARFrame retention
     public let id: UUID
@@ -74,6 +75,7 @@ class DatasetEncoder {
         }
         // Drop frame if encoding is backed up to avoid accumulating ARFrame references.
         guard encodingSemaphore.wait(timeout: .now()) == .success else {
+            queueDroppedFrames += 1
             return
         }
         dispatchGroup.enter()
@@ -138,6 +140,7 @@ class DatasetEncoder {
     func wrapUp() {
         dispatchGroup.wait()
         self.rgbEncoder.finishEncoding()
+        print("Dropped frames — encoding queue full: \(queueDroppedFrames), RGB writer: \(rgbEncoder.droppedFrames)")
         self.imuEncoder.done()
         self.odometryEncoder.done()
         self.distortionEncoder.done()

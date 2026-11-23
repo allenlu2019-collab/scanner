@@ -40,10 +40,9 @@ class VideoEncoder {
         initializeFile()
     }
 
-    private var droppedFrames = 0
+    private(set) var droppedFrames = 0
 
     func finishEncoding() {
-        if droppedFrames > 0 { print("Dropped \(droppedFrames) RGB frames.") }
         self.doneRecording()
     }
 

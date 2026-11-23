@@ -66,3 +66,5 @@ The `imu.csv` file contains timestamps, linear acceleration readings and angular
 | alpha\_y | Rotation in rad/s around the y-axis |
 | alpha\_z | Rotation in rad/s around the z-axis |
 
+
+On the iPhone 13 Pro Max rear LiDAR recordings tested with ARKit, no `distortion/` directory was produced. When ARKit does not supply lens calibration data, the `distortion_center_x` and `distortion_center_y` columns are empty.
