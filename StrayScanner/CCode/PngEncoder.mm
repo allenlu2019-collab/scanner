@@ -7,8 +7,6 @@
 //
 
 #import <Foundation/Foundation.h>
-#define LODEPNG_NO_COMPILE_DECODER 1
-#define LODEPNG_NO_COMPILE_DISK 1
 #import "PngEncoder.h"
 #import "lodepng.h"
 #include <cmath>
@@ -38,7 +36,19 @@
 }
 
 - (NSData*) fileContents {
-    lodepng::encode(png, inputImage, width, height, LCT_GREY, 16);
+    lodepng::State state;
+    state.info_raw.colortype = LCT_GREY;
+    state.info_raw.bitdepth = 16;
+    state.info_png.color.colortype = LCT_GREY;
+    state.info_png.color.bitdepth = 16;
+    state.encoder.auto_convert = 0;
+    state.encoder.filter_strategy = LFS_ZERO;
+    state.encoder.zlibsettings.lazymatching = 0;
+    state.encoder.zlibsettings.windowsize = 1024;
+    png.clear();
+    if (lodepng::encode(png, inputImage, width, height, state) != 0) {
+        return nil;
+    }
     NSData* outData = [[NSData alloc] initWithBytes:(void*)png.data() length:png.size()];
     return outData;
 }

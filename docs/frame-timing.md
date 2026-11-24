@@ -69,3 +69,16 @@ Recording `5894ae4c5c` used depth preview, a 30 fps target, the standard three-f
 All stages above had 748 samples. Thermal state rose from nominal to serious. The depth PNG stage alone consumed nearly the entire 33.3 ms target interval. Confidence PNG work adds about 9 ms on the same serial queue. The camera format selection and encoder scheduling stayed unchanged. A target slot is now marked used only after queue admission, allowing a later callback in the same slot to retry.
 
 **Review requested from Claude Code:** Should we first benchmark faster lossless depth PNG settings, or switch to ImageIO? Please flag 16-bit sample fidelity and interoperability risks. The proposed comparison keeps queue capacity, camera format, and preview fixed and checks decoded depth samples, file sizes, stage timings, sustained FPS, stream alignment, and thermal state. Parallel PNG processing is a separate experiment if compression alone is insufficient.
+
+## Faster lossless depth PNG and phone retest
+
+The depth encoder keeps 16-bit grayscale PNG and uses filter zero, disables automatic color conversion and lazy matching, and sets a 1,024-byte compression window. The Objective-C++ wrapper and the C++ implementation now use the same lodepng header configuration. The initial optimized build crashed in `PngEncoder.fileContents` with mismatched state layout. The corrected build passed Bluetooth recording on the iPhone 13 Pro Max.
+
+On the Mac, 30 recorded depth frames decoded to exactly the same 16-bit values under both configurations. Median encoding time fell from 7.15 to 1.46 ms. The combined size of those depth PNGs increased from 414,625 to 839,803 bytes.
+
+| iPhone run | Capture span | Saved fps | Queue-full attempts | Writer drops | RGB / depth / odometry | Median depth PNG | Thermal state |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | --- |
+| `29d14285f4` | 31.29 s | 29.81 | 0 | 0 | 934 / 934 / 934 | 7.42 ms | nominal to fair |
+| `7ffb013b98` | 173.85 s | 29.98 | 0 | 0 | 5,213 / 5,213 / 5,213 | 7.95 ms | nominal to serious |
+
+Both used the 30 fps setting, depth preview, and the standard three-frame queue. RGB counts were decoded with ffprobe. Depth PNG indices matched odometry frame indices in both runs. The longer recording contained stretches of roughly 17 ms and 33 ms ARKit callback timestamp spacing and sustained about 30 saved fps in every minute segment. Stage timings in the long run cover the first 3,600 samples per stage. The frame-rate, drop, and alignment targets passed for this near-three-minute run. The thermal target of fair or better did not pass.

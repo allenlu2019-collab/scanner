@@ -21,3 +21,7 @@ The ninth folder contained a zero-byte `rgb.mp4`, a header-only `odometry.csv` (
 Subsequent builds log separate counts for frames skipped because the encoding queue was full and frames rejected by the RGB writer. These counters exclude intentional frame-rate subsampling.
 
 The two IMU samples in the empty scan were 10.058 ms apart. This measures the spacing between samples rather than total recording duration. A quick start and stop is plausible. The exact trigger and build provenance for that folder remain unconfirmed. Scanner now removes zero-frame captures after finalization and returns to the list. It also removes failed captures with saved frames before showing the encoding error.
+
+## Fast depth PNG crash on iPhone
+
+Two starts with the Bluetooth remote were reported to exit the app in the first fast-PNG build. Both iPhone crash reports show a segmentation fault in `PngEncoder.fileContents` at the output vector clear. The wrapper had disabled decoder declarations locally, while the separately compiled lodepng implementation included them. This changes the layout of the newly used lodepng state. The wrapper now uses the same header configuration as the implementation. The crash location points to the recording encoder, so both on-screen and Bluetooth starts need retesting on the corrected build.
