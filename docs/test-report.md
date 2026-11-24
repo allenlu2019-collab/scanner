@@ -25,3 +25,9 @@ The two IMU samples in the empty scan were 10.058 ms apart. This measures the sp
 ## Fast depth PNG crash on iPhone
 
 Two starts with the Bluetooth remote were reported to exit the app in the first fast-PNG build. Both iPhone crash reports show a segmentation fault in `PngEncoder.fileContents` at the output vector clear. The wrapper had disabled decoder declarations locally, while the separately compiled lodepng implementation included them. This changes the layout of the newly used lodepng state. The wrapper now uses the same header configuration as the implementation. The crash location points to the recording encoder, so both on-screen and Bluetooth starts need retesting on the corrected build.
+
+## Scanner Fixed display name and device check
+
+The modified app now appears as **Scanner Fixed** on the iPhone Home Screen. The existing development bundle identifier was retained, so the update used the same recording storage. The App Store app and upstream comparison build still appear as **Stray Scanner**.
+
+After the update, a physical iPhone 13 Pro Max recorded 31.13 seconds at the 30 fps setting with depth preview. The saved rate was 29.94 fps. The queue and RGB writer both reported zero drops. ffprobe decoded 933 RGB frames, matching 933 depth PNGs and 933 odometry rows. The depth file and odometry indices matched. Thermal state rose from nominal to fair.
