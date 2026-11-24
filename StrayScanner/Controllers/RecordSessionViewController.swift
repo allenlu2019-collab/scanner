@@ -41,6 +41,8 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
     private var datasetEncoder: DatasetEncoder?
     private let imuOperationQueue = OperationQueue()
     private static let previewDepthKey = "PreviewDepth"
+    private var recordingPreviewMode = "unknown"
+    private var recordingFps = 0
     private var finalizingRecording = false
     private var lastRemotePress: TimeInterval?
     private static let defaultFpsSetting = 1 // 30 fps
@@ -179,6 +181,8 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
     }
 
     private func startRecording() {
+        recordingFps = AvailableFpsSettings[chosenFpsSetting]
+        recordingPreviewMode = renderer.map { $0.renderMode == .rgb ? "rgb" : "depth" } ?? "unknown"
         self.startedRecording = Date()
         updateTime()
         updateLabelTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -205,11 +209,15 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         }
         finalizingRecording = true
         recordButton.isUserInteractionEnabled = false
+        let fps = recordingFps
+        let previewMode = recordingPreviewMode
         DispatchQueue.global(qos: .userInitiated).async {
             encoder.wrapUp()
             let hasFrames = encoder.savedFrameCount > 0
             if !hasFrames || encoder.status != .allGood {
                 encoder.removeRecordingFiles()
+            } else {
+                encoder.writeCaptureStats(fps: fps, previewMode: previewMode)
             }
             DispatchQueue.main.async {
                 self.finalizingRecording = false
@@ -269,6 +277,9 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
     }
 
     private func setPreviewMode(_ mode: RenderMode) {
+        if startedRecording != nil && renderer?.renderMode != mode {
+            recordingPreviewMode = "mixed"
+        }
         renderer?.renderMode = mode
         rgbView.isHidden = mode == .depth
         depthView.isHidden = mode == .rgb

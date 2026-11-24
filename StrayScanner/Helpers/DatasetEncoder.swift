@@ -167,6 +167,22 @@ class DatasetEncoder {
         }
     }
 
+    func writeCaptureStats(fps: Int, previewMode: String) {
+        let stats: [String: Any] = [
+            "queue_full_drops": queueDroppedFrames,
+            "writer_drops": rgbEncoder.droppedFrames,
+            "saved_frames": savedFrameCount,
+            "fps_setting": fps,
+            "preview_mode": previewMode
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: stats, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: datasetDirectory.appendingPathComponent("stats.json"), options: .atomic)
+        } catch {
+            print("Could not write capture statistics: \(error.localizedDescription)")
+        }
+    }
+
     func removeRecordingFiles() {
         do {
             try FileManager.default.removeItem(at: datasetDirectory)
