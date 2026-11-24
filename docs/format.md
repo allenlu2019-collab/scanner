@@ -68,3 +68,5 @@ The `imu.csv` file contains timestamps, linear acceleration readings and angular
 
 
 On the iPhone 13 Pro Max rear LiDAR recordings tested with ARKit, no `distortion/` directory was produced. When ARKit does not supply lens calibration data, the `distortion_center_x` and `distortion_center_y` columns are empty.
+
+The RGB MP4 uses variable frame timing based on ARKit capture timestamps. Match decoded RGB frames to depth PNGs and odometry rows by their zero-based frame index when depth is available. A missing depth sample can leave a gap in the PNG filenames. Use the video timestamps for playback instead of assuming a constant interval.

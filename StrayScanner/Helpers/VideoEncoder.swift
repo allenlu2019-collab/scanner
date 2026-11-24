@@ -39,6 +39,10 @@ class VideoEncoder {
     }
 
     private(set) var droppedFrames = 0
+    #if DEBUG
+    private(set) var waitTiming = StageTimings()
+    private(set) var appendTiming = StageTimings()
+    #endif
 
     func finishEncoding() {
         self.doneRecording()
@@ -47,14 +51,18 @@ class VideoEncoder {
     func add(frame: VideoEncoderInput) -> Bool {
         guard status == .allGood, let writer = videoWriter,
               let input = videoWriterInput, let adapter = videoAdapter else { return false }
-        let deadline = ProcessInfo.processInfo.systemUptime + 1
+        let waitStart = ProcessInfo.processInfo.systemUptime
+        let deadline = waitStart + 1
         while writer.status == .writing && !input.isReadyForMoreMediaData &&
               ProcessInfo.processInfo.systemUptime < deadline {
             Thread.sleep(forTimeInterval: 0.01)
         }
+        #if DEBUG
+        waitTiming.record(since: waitStart)
+        #endif
         let time = CMTime(seconds: frame.time - (firstFrameTime ?? frame.time), preferredTimescale: timeScale)
         guard writer.status == .writing, input.isReadyForMoreMediaData,
-              adapter.append(frame.buffer, withPresentationTime: time) else {
+              append(frame.buffer, at: time, using: adapter) else {
             if writer.status != .writing { status = .error }
             droppedFrames += 1
             print("Could not append video frame: \(writer.error?.localizedDescription ?? "writer unavailable")")
@@ -62,6 +70,15 @@ class VideoEncoder {
         }
         if firstFrameTime == nil { firstFrameTime = frame.time }
         return true
+    }
+
+    private func append(_ buffer: CVPixelBuffer, at time: CMTime,
+                        using adapter: AVAssetWriterInputPixelBufferAdaptor) -> Bool {
+        #if DEBUG
+        let start = ProcessInfo.processInfo.systemUptime
+        defer { appendTiming.record(since: start) }
+        #endif
+        return adapter.append(buffer, withPresentationTime: time)
     }
 
     private func initializeFile() {

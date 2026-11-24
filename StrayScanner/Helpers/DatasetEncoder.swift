@@ -11,6 +11,25 @@ import ARKit
 import CryptoKit
 import CoreMotion
 
+#if DEBUG
+struct StageTimings {
+    private var samples: [Double] = []
+
+    mutating func record(since start: TimeInterval) {
+        guard samples.count < 3600 else { return }
+        samples.append((ProcessInfo.processInfo.systemUptime - start) * 1000)
+    }
+
+    var summary: [String: Double] {
+        guard !samples.isEmpty else { return [:] }
+        let sorted = samples.sorted()
+        return ["samples": Double(sorted.count),
+                "median_ms": sorted[sorted.count / 2],
+                "p95_ms": sorted[Int(ceil(Double(sorted.count) * 0.95)) - 1]]
+    }
+}
+#endif
+
 class DatasetEncoder {
     enum Status {
         case allGood
@@ -34,6 +53,14 @@ class DatasetEncoder {
     private var captureGaps: [String: Int] = [:]
     private(set) var savedFrameCount = 0
     private var queueDroppedFrames = 0
+    private let configuredVideoFps: Int
+    private let videoResolution: CGSize
+    private let thermalStateAtStart = ProcessInfo.processInfo.thermalState.rawValue
+    #if DEBUG
+    private var depthTiming = StageTimings()
+    private var confidenceTiming = StageTimings()
+    private var odometryTiming = StageTimings()
+    #endif
     private let captureFps: Double
     private var lastSelectedSlot = -1
     #if DEBUG && SCANNER_QUEUE_EXPERIMENT
@@ -57,6 +84,8 @@ class DatasetEncoder {
 
     init(arConfiguration: ARWorldTrackingConfiguration, fps: Int) {
         self.captureFps = Double(fps)
+        configuredVideoFps = arConfiguration.videoFormat.framesPerSecond
+        videoResolution = arConfiguration.videoFormat.imageResolution
         self.queue = DispatchQueue(label: "encoderQueue")
         
         let width = arConfiguration.videoFormat.imageResolution.width
@@ -93,12 +122,12 @@ class DatasetEncoder {
         // Allow a quarter-slot of timestamp jitter at each sampling boundary.
         let slot = Int(floor((captureTime - firstCaptureTime) * captureFps + 0.25))
         guard slot > lastSelectedSlot else { return }
-        lastSelectedSlot = slot
         // Drop frame if encoding is backed up to avoid accumulating ARFrame references.
         guard encodingSemaphore.wait(timeout: .now()) == .success else {
             queueDroppedFrames += 1
             return
         }
+        lastSelectedSlot = slot
         dispatchGroup.enter()
         queue.async {
             defer {
@@ -109,16 +138,34 @@ class DatasetEncoder {
             let frameNumber = self.savedFrameCount
             self.savedFrameCount += 1
             if let sceneDepth = frame.sceneDepth {
+                #if DEBUG
+                let depthStart = ProcessInfo.processInfo.systemUptime
+                #endif
                 self.depthEncoder.encodeFrame(frame: sceneDepth.depthMap, frameNumber: frameNumber)
+                #if DEBUG
+                self.depthTiming.record(since: depthStart)
+                #endif
                 if let confidence = sceneDepth.confidenceMap {
+                    #if DEBUG
+                    let confidenceStart = ProcessInfo.processInfo.systemUptime
+                    #endif
                     self.confidenceEncoder.encodeFrame(frame: confidence, frameNumber: frameNumber)
+                    #if DEBUG
+                    self.confidenceTiming.record(since: confidenceStart)
+                    #endif
                 } else {
                     print("warning: confidence map missing.")
                 }
             } else {
                 print("warning: scene depth missing.")
             }
+            #if DEBUG
+            let odometryStart = ProcessInfo.processInfo.systemUptime
+            #endif
             self.odometryEncoder.add(frame: frame, currentFrame: frameNumber)
+            #if DEBUG
+            self.odometryTiming.record(since: odometryStart)
+            #endif
             self.distortionEncoder.add(frame: frame, currentFrame: frameNumber)
             self.lastFrame = frame
         }
@@ -187,8 +234,13 @@ class DatasetEncoder {
         }
     }
 
-    func writeCaptureStats(fps: Int, previewMode: String) {
+    func writeCaptureStats(fps: Int, previewMode: String, thermalStateAtStop: Int) {
         var stats: [String: Any] = [
+            "configured_camera_fps": configuredVideoFps,
+            "configured_camera_width": Int(videoResolution.width),
+            "configured_camera_height": Int(videoResolution.height),
+            "thermal_state_start": thermalStateAtStart,
+            "thermal_state_stop": thermalStateAtStop,
             "arkit_callbacks": currentFrame + 1,
             "arkit_timestamp_gap_histogram_ms": captureGaps,
             "queue_limit": Self.encodingQueueLimit,
@@ -198,6 +250,15 @@ class DatasetEncoder {
             "fps_setting": fps,
             "preview_mode": previewMode
         ]
+        #if DEBUG
+        stats["stage_timing"] = [
+            "rgb_writer_wait": rgbEncoder.waitTiming.summary,
+            "rgb_append": rgbEncoder.appendTiming.summary,
+            "depth_png": depthTiming.summary,
+            "confidence_png": confidenceTiming.summary,
+            "odometry": odometryTiming.summary
+        ]
+        #endif
         if let first = firstCaptureTime, let last = lastCaptureTime, last > first {
             stats["arkit_capture_span_s"] = last - first
             stats["arkit_capture_fps"] = Double(currentFrame) / (last - first)

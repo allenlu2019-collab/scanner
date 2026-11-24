@@ -53,3 +53,19 @@ The fix selects at most one frame per target time slot using ARKit capture times
 The post-fix device recording `1e85b26081` had 1,832 callbacks at 58.67 capture fps. The sampler selected 937 frames over 31.21 seconds, of which 186 were skipped at the full six-frame encoding queue and zero were rejected by the RGB writer. The saved rate was 24.03 fps. ffprobe decoded 751 RGB frames, matching 751 depth PNGs and 751 odometry rows. The MP4 duration was 31.275 seconds. This run verifies the near-60 fps input path on hardware. An on-device rerun with 30 fps input is still pending.
 
 The three-frame limit remains the default. The six-frame limit is enabled only by the `SCANNER_QUEUE_EXPERIMENT` flag in Debug builds. The next diagnostic is to measure RGB writer wait and append time, depth PNG time, and confidence PNG time separately.
+
+## Stage timing on iPhone 13 Pro Max
+
+Recording `5894ae4c5c` used depth preview, a 30 fps target, the standard three-frame queue, and a configured 1920 × 1440 camera format at 60 fps. ARKit delivered 1,861 callbacks at 58.63 capture fps. Scanner saved 748 frames across 31.73 s (23.54 fps). The writer rejected zero frames. The 755 queue-full events are rejected admission attempts, including retries within the same target time slot. They do not represent 755 unique missing frames.
+
+| Stage | Median | p95 |
+| --- | ---: | ---: |
+| Depth PNG | 33.02 ms | 35.65 ms |
+| Confidence PNG | 9.14 ms | 9.93 ms |
+| RGB append | 0.278 ms | 0.358 ms |
+| RGB writer wait | 0.003 ms | 0.005 ms |
+| Odometry | 0.023 ms | 0.034 ms |
+
+All stages above had 748 samples. Thermal state rose from nominal to serious. The depth PNG stage alone consumed nearly the entire 33.3 ms target interval. Confidence PNG work adds about 9 ms on the same serial queue. The camera format selection and encoder scheduling stayed unchanged. A target slot is now marked used only after queue admission, allowing a later callback in the same slot to retry.
+
+**Review requested from Claude Code:** Should we first benchmark faster lossless depth PNG settings, or switch to ImageIO? Please flag 16-bit sample fidelity and interoperability risks. The proposed comparison keeps queue capacity, camera format, and preview fixed and checks decoded depth samples, file sizes, stage timings, sustained FPS, stream alignment, and thermal state. Parallel PNG processing is a separate experiment if compression alone is insufficient.

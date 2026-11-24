@@ -211,13 +211,14 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         recordButton.isUserInteractionEnabled = false
         let fps = recordingFps
         let previewMode = recordingPreviewMode
+        let thermalStateAtStop = ProcessInfo.processInfo.thermalState.rawValue
         DispatchQueue.global(qos: .userInitiated).async {
             encoder.wrapUp()
             let hasFrames = encoder.savedFrameCount > 0
             if !hasFrames || encoder.status != .allGood {
                 encoder.removeRecordingFiles()
             } else {
-                encoder.writeCaptureStats(fps: fps, previewMode: previewMode)
+                encoder.writeCaptureStats(fps: fps, previewMode: previewMode, thermalStateAtStop: thermalStateAtStop)
             }
             DispatchQueue.main.async {
                 self.finalizingRecording = false
