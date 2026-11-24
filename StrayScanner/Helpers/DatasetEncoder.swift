@@ -27,10 +27,21 @@ class DatasetEncoder {
     private var lastFrame: ARFrame?
     private var dispatchGroup = DispatchGroup()
     private var currentFrame: Int = -1
+    private var firstCaptureTime: TimeInterval?
+    private var lastCaptureTime: TimeInterval?
+    private var firstCallbackTime: TimeInterval?
+    private var lastCallbackTime: TimeInterval?
+    private var captureGaps: [String: Int] = [:]
     private(set) var savedFrameCount = 0
     private var queueDroppedFrames = 0
-    private let frameInterval: Int // Only save every frameInterval-th frame.
-    private let encodingSemaphore = DispatchSemaphore(value: 3) // Limit queued frames to avoid ARFrame retention
+    private let captureFps: Double
+    private var lastSelectedSlot = -1
+    #if DEBUG && SCANNER_QUEUE_EXPERIMENT
+    private static let encodingQueueLimit = 6
+    #else
+    private static let encodingQueueLimit = 3
+    #endif
+    private let encodingSemaphore = DispatchSemaphore(value: DatasetEncoder.encodingQueueLimit)
     public let id: UUID
     public let rgbFilePath: URL // Relative to app document directory.
     public let depthFilePath: URL // Relative to app document directory.
@@ -44,8 +55,8 @@ class DatasetEncoder {
     private var latestGyroscopeData: (timestamp: Double, data: simd_double3)?
 
 
-    init(arConfiguration: ARWorldTrackingConfiguration, fpsDivider: Int = 1) {
-        self.frameInterval = fpsDivider
+    init(arConfiguration: ARWorldTrackingConfiguration, fps: Int) {
+        self.captureFps = Double(fps)
         self.queue = DispatchQueue(label: "encoderQueue")
         
         let width = arConfiguration.videoFormat.imageResolution.width
@@ -67,12 +78,22 @@ class DatasetEncoder {
         self.distortionEncoder = DistortionEncoder(datasetDirectory: datasetDirectory)
     }
 
-    func add(frame: ARFrame) {
-        currentFrame += 1
-        let totalFrames = currentFrame
-        if (currentFrame % frameInterval != 0) {
-            return
+    func add(frame: ARFrame, callbackTime: TimeInterval) {
+        let captureTime = frame.timestamp
+        if let previous = lastCaptureTime {
+            let gapMs = Int(((captureTime - previous) * 1000).rounded())
+            captureGaps[String(gapMs), default: 0] += 1
         }
+        if firstCaptureTime == nil { firstCaptureTime = captureTime }
+        if firstCallbackTime == nil { firstCallbackTime = callbackTime }
+        lastCaptureTime = captureTime
+        lastCallbackTime = callbackTime
+        currentFrame += 1
+        guard let firstCaptureTime = firstCaptureTime else { return }
+        // Allow a quarter-slot of timestamp jitter at each sampling boundary.
+        let slot = Int(floor((captureTime - firstCaptureTime) * captureFps + 0.25))
+        guard slot > lastSelectedSlot else { return }
+        lastSelectedSlot = slot
         // Drop frame if encoding is backed up to avoid accumulating ARFrame references.
         guard encodingSemaphore.wait(timeout: .now()) == .success else {
             queueDroppedFrames += 1
@@ -84,8 +105,7 @@ class DatasetEncoder {
                 self.encodingSemaphore.signal()
                 self.dispatchGroup.leave()
             }
-            guard self.rgbEncoder.add(frame: VideoEncoderInput(buffer: frame.capturedImage, time: frame.timestamp),
-                                      currentFrame: totalFrames) else { return }
+            guard self.rgbEncoder.add(frame: VideoEncoderInput(buffer: frame.capturedImage, time: frame.timestamp)) else { return }
             let frameNumber = self.savedFrameCount
             self.savedFrameCount += 1
             if let sceneDepth = frame.sceneDepth {
@@ -168,13 +188,24 @@ class DatasetEncoder {
     }
 
     func writeCaptureStats(fps: Int, previewMode: String) {
-        let stats: [String: Any] = [
+        var stats: [String: Any] = [
+            "arkit_callbacks": currentFrame + 1,
+            "arkit_timestamp_gap_histogram_ms": captureGaps,
+            "queue_limit": Self.encodingQueueLimit,
             "queue_full_drops": queueDroppedFrames,
             "writer_drops": rgbEncoder.droppedFrames,
             "saved_frames": savedFrameCount,
             "fps_setting": fps,
             "preview_mode": previewMode
         ]
+        if let first = firstCaptureTime, let last = lastCaptureTime, last > first {
+            stats["arkit_capture_span_s"] = last - first
+            stats["arkit_capture_fps"] = Double(currentFrame) / (last - first)
+        }
+        if let first = firstCallbackTime, let last = lastCallbackTime, last > first {
+            stats["arkit_callback_span_s"] = last - first
+            stats["arkit_callback_fps"] = Double(currentFrame) / (last - first)
+        }
         do {
             let data = try JSONSerialization.data(withJSONObject: stats, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: datasetDirectory.appendingPathComponent("stats.json"), options: .atomic)

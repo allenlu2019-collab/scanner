@@ -24,16 +24,14 @@ class VideoEncoder {
     private var videoWriter: AVAssetWriter?
     private var videoWriterInput: AVAssetWriterInput?
     private var videoAdapter: AVAssetWriterInputPixelBufferAdaptor?
-    private let timeScale = CMTimeScale(60)
+    private let timeScale = CMTimeScale(60_000)
+    private var firstFrameTime: TimeInterval?
     public let width: CGFloat
     public let height: CGFloat
-    private let systemBootedAt: TimeInterval
-    private var done: Bool = false
     public var filePath: URL
     public var status: EncodingStatus = EncodingStatus.allGood
 
     init(file: URL, width: CGFloat, height: CGFloat) {
-        self.systemBootedAt = ProcessInfo.processInfo.systemUptime
         self.filePath = file
         self.width = width
         self.height = height
@@ -46,7 +44,7 @@ class VideoEncoder {
         self.doneRecording()
     }
 
-    func add(frame: VideoEncoderInput, currentFrame: Int) -> Bool {
+    func add(frame: VideoEncoderInput) -> Bool {
         guard status == .allGood, let writer = videoWriter,
               let input = videoWriterInput, let adapter = videoAdapter else { return false }
         let deadline = ProcessInfo.processInfo.systemUptime + 1
@@ -54,7 +52,7 @@ class VideoEncoder {
               ProcessInfo.processInfo.systemUptime < deadline {
             Thread.sleep(forTimeInterval: 0.01)
         }
-        let time = CMTime(value: Int64(currentFrame), timescale: timeScale)
+        let time = CMTime(seconds: frame.time - (firstFrameTime ?? frame.time), preferredTimescale: timeScale)
         guard writer.status == .writing, input.isReadyForMoreMediaData,
               adapter.append(frame.buffer, withPresentationTime: time) else {
             if writer.status != .writing { status = .error }
@@ -62,6 +60,7 @@ class VideoEncoder {
             print("Could not append video frame: \(writer.error?.localizedDescription ?? "writer unavailable")")
             return false
         }
+        if firstFrameTime == nil { firstFrameTime = frame.time }
         return true
     }
 

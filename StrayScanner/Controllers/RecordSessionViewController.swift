@@ -188,7 +188,7 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
         updateLabelTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             self.updateTime()
         }
-        datasetEncoder = DatasetEncoder(arConfiguration: arConfiguration!, fpsDivider: FpsDividers[chosenFpsSetting])
+        datasetEncoder = DatasetEncoder(arConfiguration: arConfiguration!, fps: recordingFps)
         startRawIMU()
     }
 
@@ -338,10 +338,11 @@ class RecordSessionViewController : UIViewController, ARSessionDelegate {
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        let callbackTime = ProcessInfo.processInfo.systemUptime
         self.renderer!.render(frame: frame)
         if startedRecording != nil {
             if let encoder = datasetEncoder {
-                encoder.add(frame: frame)
+                encoder.add(frame: frame, callbackTime: callbackTime)
             } else {
                 print("There is no video encoder. That can't be good.")
             }

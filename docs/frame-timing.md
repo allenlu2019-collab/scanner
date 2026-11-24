@@ -43,3 +43,13 @@ The signed build succeeded and exported the counters on a physical iPhone 13 Pro
 4. Repeat the same runs after the change. Aim for at least 29.5 saved samples/s and zero queue and writer drops in each run, with matching decoded RGB, depth PNG, and odometry counts. Report any incoming ARKit gaps separately. Evaluate using actual capture timestamps for the MP4 as a separate change to playback timing.
 
 **Feedback requested from Claude Code:** Does this instrumentation isolate the stage that saturates the queue? Please review the proposed overlap for frame ordering, ARFrame lifetime, and finalization risks, and suggest any simpler experiment before we change the encoder.
+
+## Timestamp sampling fix and device verification
+
+On the iPhone 13 Pro Max, recording `6bbabe9fa3` exposed a sampling bug. At the 30 fps setting, ARKit delivered 954 frames at 29.99 fps, but the every-other-frame rule selected only 477. Both drop counters were zero, and the saved rate was 15.00 fps.
+
+The fix selects at most one frame per target time slot using ARKit capture timestamps. RGB presentation time now uses the captured frame timestamp relative to the first successful append. A sampling check with ideal 30 and 60 fps input selected 900 frames in each 30-second run at the 30 fps setting. The signed iOS build passed.
+
+The post-fix device recording `1e85b26081` had 1,832 callbacks at 58.67 capture fps. The sampler selected 937 frames over 31.21 seconds, of which 186 were skipped at the full six-frame encoding queue and zero were rejected by the RGB writer. The saved rate was 24.03 fps. ffprobe decoded 751 RGB frames, matching 751 depth PNGs and 751 odometry rows. The MP4 duration was 31.275 seconds. This run verifies the near-60 fps input path on hardware. An on-device rerun with 30 fps input is still pending.
+
+The three-frame limit remains the default. The six-frame limit is enabled only by the `SCANNER_QUEUE_EXPERIMENT` flag in Debug builds. The next diagnostic is to measure RGB writer wait and append time, depth PNG time, and confidence PNG time separately.
